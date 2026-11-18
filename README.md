@@ -85,21 +85,82 @@ Topic names are Postgres channel names: case-sensitive, at most 63 bytes.
 ### 5. Subscribe, then load the current state
 
 ```csharp
-public override async Task WatchOrders(WatchOrdersRequest request, IServerStreamWriter<OrderEvent> response,
-    ServerCallContext context)
-{
-    var ct = context.CancellationToken;
-    await using var changes = await receiver.SubscribeAsync(Topics.OrderChanges, ct);
-
-    await response.WriteAsync(await LoadSnapshotAsync(ct), ct);       // after subscribing: nothing is missed
-
-    await foreach (var change in changes.ReadEventsAsync().WithCancellation(ct))
-        await response.WriteAsync(await LoadChangeAsync(change, ct), ct);
-}
+await using var changes = await receiver.SubscribeAsync(Topics.OrderChanges, ct);
+var snapshot = await LoadSnapshotAsync(ct);                       // after subscribing: nothing is missed
+await foreach (var change in changes.ReadEventsAsync().WithCancellation(ct))
+    ...
 ```
 
 `SubscribeAsync` returns once Postgres is listening, so everything committed after that is delivered. Load the
-current state after subscribing, not before.
+current state after subscribing, not before. The live-query helpers below do exactly this for you.
+
+## Live queries
+
+A live query is a normal query plus "and keep it up to date": the client gets a snapshot, then an event per changed
+row, until it leaves. `WatchAsync` does the subscribe, snapshot, stream loop, so you only say how to load the snapshot
+and how to turn one message into an event (return `null` to skip it, e.g. a row this subscriber may not see):
+
+```csharp
+// gRPC (generated when the project references Grpc.Core.Api, which Grpc.AspNetCore does)
+public override Task WatchOrders(WatchOrdersRequest request, IServerStreamWriter<OrderEvent> stream,
+    ServerCallContext context) =>
+    stream.WatchAsync(receiver, Topics.OrderChanges, context,
+        snapshot: async ct => OrderEvent.FromSnapshot(await queries.ListOrdersAsync(ct)),
+        change: async (c, ct) => OrderEvent.FromChange(c.Id, await queries.GetOrderAsync(new(c.Id), ct)));
+
+// Anything else (SSE, WebSockets): an IAsyncEnumerable of events
+await foreach (var e in receiver.WatchAsync(Topics.OrderChanges, snapshot, change, ct))
+    ...
+```
+
+A change that races with the snapshot may arrive twice, so clients apply events as idempotent upserts by id. If the
+connection to Postgres is lost, the sequence throws `TopicConnectionLostException`; the client reconnects and the
+fresh snapshot covers whatever was missed.
+
+### Row changes from a trigger
+
+The simplest message is just the row's id, `RowChanged<TId>`. The live query reloads the row: still there is an
+upsert, gone is a delete. So one message type and one trigger function serve every table, and a late or
+out-of-order notification can never bring back old data (the cost is one query per open stream per change):
+
+```csharp
+public static readonly Topic<RowChanged<long>> OrderChanges = new("order_changes");
+```
+
+```sql
+CREATE FUNCTION notify_row_change() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_notify(TG_ARGV[0],
+                      json_build_object('id', CASE TG_OP WHEN 'DELETE' THEN OLD.id ELSE NEW.id END)::text);
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER orders_notify AFTER INSERT OR UPDATE OR DELETE ON orders
+FOR EACH ROW EXECUTE FUNCTION notify_row_change('order_changes');
+```
+
+### Channel names from the schema
+
+With a database-first setup you can keep the channel names in the schema instead of in C#: declare them as a
+Postgres enum, publish only through a function that takes that enum, and name the topics from the enum your code
+generator makes of it (sqlc-gen-csharp turns it into a C# enum with `Stringify()`):
+
+```sql
+CREATE TYPE channel AS ENUM ('order_changes');
+
+CREATE FUNCTION publish(ch channel, payload json) RETURNS void
+LANGUAGE sql AS $$ SELECT pg_notify(ch::text, payload::text) $$;
+-- in notify_row_change: PERFORM publish(TG_ARGV[0]::channel, json_build_object(...));
+```
+
+```csharp
+public static readonly Topic<RowChanged<long>> OrderChanges = new(Channel.OrderChanges.Stringify());
+```
+
+Publishing to a channel that is not in the enum then fails, though only when the trigger runs: PL/pgSQL does not
+check function bodies on `CREATE`.
 
 ## What is checked when
 
