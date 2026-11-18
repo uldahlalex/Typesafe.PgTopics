@@ -3,6 +3,12 @@
      is at. -->
 <Project>
 
+  <PropertyGroup>
+    <!-- When the app's .csproj sits above this checkout (e.g. at the repo root), its default globs would otherwise
+         compile the generator's source into the app. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);$([MSBuild]::NormalizeDirectory($(MSBuildThisFileDirectory)..))**</DefaultItemExcludes>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="$(MSBuildThisFileDirectory)../src/Typesafe.PgTopics.Generator/Typesafe.PgTopics.Generator.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
