@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- A Roslyn source generator that adds the runtime in Runtime/ to the consuming project as source. Consumers load the
-       built DLL as an analyzer (see README.md); it is released as a single file on GitHub Releases, not on NuGet. -->
+  <!-- A Roslyn source generator that adds the runtime in Runtime/ to the consuming project as source. Consumers build it
+       from source as a git submodule, through build/Typesafe.PgTopics.targets (see README.md); it is not published as a
+       package. -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <LangVersion>latest</LangVersion>
@@ -11,9 +12,6 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsPackable>false</IsPackable>
-    <!-- Every push to the default branch releases the next patch of this series (v1.0.0, v1.0.1, ...).
-         Change it (e.g. to 2.0) to start a new series; the next release is then v2.0.0. -->
-    <ReleaseSeries>1.0</ReleaseSeries>
   </PropertyGroup>
 
   <ItemGroup>

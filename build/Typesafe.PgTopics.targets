@@ -1,0 +1,11 @@
+<!-- Import this from the consuming app's .csproj (see README.md). It builds the generator from this checkout, which
+     adds the runtime to the app as source, so the version is whatever commit this checkout (usually a git submodule)
+     is at. -->
+<Project>
+
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../src/Typesafe.PgTopics.Generator/Typesafe.PgTopics.Generator.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

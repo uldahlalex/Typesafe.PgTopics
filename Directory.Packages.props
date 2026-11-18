@@ -1,0 +1,6 @@
+<!-- Same for central package management: if the consuming repo uses it, the generator keeps its own package versions. -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

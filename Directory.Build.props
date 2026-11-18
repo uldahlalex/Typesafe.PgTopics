@@ -1,0 +1,3 @@
+<!-- Stops MSBuild from applying the consuming repo's Directory.Build.props to the generator when this repo is a
+     submodule inside it (settings like TreatWarningsAsErrors or a different TargetFramework would leak in). -->
+<Project />

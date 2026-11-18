@@ -28,43 +28,34 @@ PERFORM pg_notify('order_changes', json_build_object('op', TG_OP, 'id', NEW.id):
 
 ## Setup
 
-### 1. Add this inside `<Project>` in your `.csproj`
+### 1. Add this repository as a git submodule
 
-```xml
-<PropertyGroup>
-  <!-- Empty: latest release. Or pin a tag, e.g. v1.0.1 -->
-  <PgTopicsVersion></PgTopicsVersion>
-  <PgTopicsRepo>https://github.com/uldahlalex/Typesafe.PgTopics</PgTopicsRepo>
-</PropertyGroup>
-<ItemGroup>
-  <PackageReference Include="Npgsql" Version="10.0.3" />
-</ItemGroup>
-<Target Name="PgTopics" BeforeTargets="CoreCompile">
-  <PropertyGroup>
-    <_PgTopicsLatest>$([System.String]::IsNullOrEmpty('$(PgTopicsVersion)'))</_PgTopicsLatest>
-    <_PgTopicsDir>$(BaseIntermediateOutputPath)typesafe-pgtopics/$(PgTopicsVersion)/</_PgTopicsDir>
-    <_PgTopicsDir Condition="$(_PgTopicsLatest)">$(BaseIntermediateOutputPath)typesafe-pgtopics/latest/</_PgTopicsDir>
-    <_PgTopicsUrl>$(PgTopicsRepo)/releases/download/$(PgTopicsVersion)/Typesafe.PgTopics.Generator.dll</_PgTopicsUrl>
-    <_PgTopicsUrl Condition="$(_PgTopicsLatest)">$(PgTopicsRepo)/releases/latest/download/Typesafe.PgTopics.Generator.dll</_PgTopicsUrl>
-    <_PgTopicsCached>$([System.IO.File]::Exists('$(_PgTopicsDir)Typesafe.PgTopics.Generator.dll'))</_PgTopicsCached>
-  </PropertyGroup>
-  <DownloadFile Condition="$(_PgTopicsLatest) Or !$(_PgTopicsCached)"
-                SourceUrl="$(_PgTopicsUrl)" DestinationFolder="$(_PgTopicsDir)"
-                ContinueOnError="$(_PgTopicsCached)" />
-  <ItemGroup>
-    <Analyzer Include="$(_PgTopicsDir)Typesafe.PgTopics.Generator.dll" />
-  </ItemGroup>
-</Target>
+From the root of your repository:
+
+```bash
+git submodule add https://github.com/uldahlalex/Typesafe.PgTopics external/Typesafe.PgTopics
 ```
 
-The DLL is a source generator: it adds the library to your project as source code (visible in the IDE under
-Dependencies > Analyzers, and you can step into it while debugging). It compiles against your own Npgsql, so there is
-no version to keep in sync. Without Npgsql the build fails with `PGTOPICS001`.
+### 2. Reference it from your `.csproj`
 
-Add the block only to the project that uses the topics, not also to projects that reference it (like a test
+```bash
+dotnet add package Npgsql
+```
+
+Then add this inside `<Project>`, with the path from your `.csproj` to the submodule:
+
+```xml
+<Import Project="../external/Typesafe.PgTopics/build/Typesafe.PgTopics.targets" />
+```
+
+The generator is built from the submodule as part of your build. It adds the library to your project as source code
+(visible in the IDE under Dependencies > Analyzers, and you can step into it while debugging). It compiles against
+your own Npgsql, so there is no version to keep in sync. Without Npgsql the build fails with `PGTOPICS001`.
+
+Add the `Import` only to the project that uses the topics, not also to projects that reference it (like a test
 project): both would then contain the same public types.
 
-### 2. Register it in `Program.cs`
+### 3. Register it in `Program.cs`
 
 ```csharp
 builder.Services.AddPostgresTopics(options =>
@@ -74,7 +65,7 @@ builder.Services.AddPostgresTopics(options =>
 That registers one `PostgresPubSub` as `ITopicEventSender` and `ITopicEventReceiver`. Outside dependency injection,
 `new PostgresPubSub(options)` works the same; dispose it when the app stops.
 
-### 3. Declare topics and messages
+### 4. Declare topics and messages
 
 ```csharp
 using Typesafe.PgTopics;
@@ -91,7 +82,7 @@ public static class Topics
 
 Topic names are Postgres channel names: case-sensitive, at most 63 bytes.
 
-### 4. Subscribe, then load the current state
+### 5. Subscribe, then load the current state
 
 ```csharp
 public override async Task WatchOrders(WatchOrdersRequest request, IServerStreamWriter<OrderEvent> response,
@@ -164,8 +155,21 @@ PGTOPICS_TEST_CONNECTION="Host=localhost;Port=5432;Database=postgres;Username=po
 The library itself is `src/Typesafe.PgTopics.Generator/Runtime/*.cs`. Those files are embedded in the generator and
 not compiled there; the test project compiles them through the generator, exactly like an app does.
 
-## Releasing
+## Versions
 
-Every push to `master`/`main` that changes `src/` or `tests/` runs the tests and publishes the next version (`v1.0.0`,
-`v1.0.1`, ...). To start a new series, change `<ReleaseSeries>` in
-`src/Typesafe.PgTopics.Generator/Typesafe.PgTopics.Generator.csproj`.
+Your repository records the exact commit of the submodule, so every build uses the version you committed.
+
+| To | Run |
+|---|---|
+| Update to the latest commit | `git submodule update --remote external/Typesafe.PgTopics` |
+| Pin a tag or commit | `git -C external/Typesafe.PgTopics checkout v1.1` (or a commit hash) |
+| Follow another branch | `git submodule set-branch -b dev external/Typesafe.PgTopics`, then update |
+
+Then commit the submodule change in your repository.
+
+Clones and CI need the submodule too: `git clone --recurse-submodules`, or `git submodule update --init` in an
+existing clone (in GitHub Actions: `actions/checkout` with `submodules: true`). A Docker build must copy the
+`external/` folder along with the project.
+
+Versions are git tags (`git tag v1.1 && git push --tags`); there is no release step, so run the tests (see
+Development) before tagging.
