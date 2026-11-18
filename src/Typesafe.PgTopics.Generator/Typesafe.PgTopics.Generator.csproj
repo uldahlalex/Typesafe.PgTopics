@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- A Roslyn source generator that adds the runtime in Runtime/ to the consuming project as source. Consumers load the
+       built DLL as an analyzer (see README.md); it is released as a single file on GitHub Releases, not on NuGet. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsPackable>false</IsPackable>
+    <!-- Every push to the default branch releases the next patch of this series (v1.0.0, v1.0.1, ...).
+         Change it (e.g. to 2.0) to start a new series; the next release is then v2.0.0. -->
+    <ReleaseSeries>1.0</ReleaseSeries>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The runtime is not compiled here (it targets the app, with Npgsql); it is embedded and emitted by the generator.
+         The tests compile it for real. -->
+    <Compile Remove="Runtime/**" />
+    <EmbeddedResource Include="Runtime/*.cs" LogicalName="Runtime/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
